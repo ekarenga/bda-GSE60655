@@ -1,0 +1,67 @@
+---
+title: "Duomenų apdorojimas"
+author: "Edvinas Karenga"
+date: "01/04/2020"
+output: html_document
+---
+```{r, include=FALSE}
+# Libraries
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+if(!requireNamespace("minfi", quietly = TRUE))
+  BiocManager::install("minfi")
+
+if(!requireNamespace("IlluminaHumanMethylation450kmanifest", quietly = TRUE))
+  BiocManager::install("IlluminaHumanMethylation450kmanifest")
+
+if(!requireNamespace("IlluminaHumanMethylation450kanno.ilmn12.hg19", quietly = TRUE))
+  BiocManager::install("IlluminaHumanMethylation450kanno.ilmn12.hg19")
+
+library(minfi)
+```
+
+```{r, echo = FALSE}
+RGset <- readRDS("../output/RGset.Rds")
+```
+
+### Pradiniai duomenys
+
+Mėginių skaičius: `r ncol(RGset)`
+
+Išmatuotų metilinimo įverčių skaičius: `r nrow(RGset)`
+
+```{r, echo = FALSE, message = FALSE}
+pValues <- detectionP(RGset)
+columnBadValuePercentage <- apply(pValues, 2, function(x) (count(x > 0.01) / length(x)) * 100)
+RGset <- RGset[, !(columnBadValuePercentage > 1)]
+```
+
+### Nepatikimų mėginių išvalymas
+
+Visi mėginiai, kurių daugiau nei 1 procentas p-value > 0.01 buvo laikomi nepatikimais ir buvo išmesti.
+
+Blogų mėginių skaičius: `r count((columnBadValuePercentage > 1))`
+
+Blogi mėginiai: `r names(columnBadValuePercentage[(columnBadValuePercentage > 1)])`
+
+```{r, echo = FALSE, message = FALSE}
+normalized <- preprocessIllumina(RGset)
+
+rowBadValuePercentage <- apply(pValues, 1, function(x) (count(x > 0.01) / length(x)) * 100)
+normalized <- normalized[!(rowBadValuePercentage > 1),]
+
+normalized <- dropMethylationLoci(normalized)
+```
+
+### Nepatikimų pozicijų išvalymas
+
+Atlikta normalizacija Illumina apdorojimo metodu. Po normalizacijos visos pozicijos, kurių daugiau nei 1 procentas p-value > 0.01 buvo laikomos nepatikimomis ir buvo išmestos. Taip pat išmestos CH pozicijos ir pozicijos esančios šalia DNR polimorfizmų (SNP).
+
+Galutinis pozicijų skaičius: `r nrow(normalized)`
+
+```{r, echo = FALSE, message = FALSE}
+saveRDS(getBeta(normalized), "../output/beta_table.Rds")
+saveRDS(pData(normalized), "../output/pData_table.Rds")
+saveRDS(getAnnotation(normalized), "../output/annotation_table.Rds")
+```

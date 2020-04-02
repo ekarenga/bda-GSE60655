@@ -1,0 +1,149 @@
+---
+title: "Išskirčių šalinimas"
+author: "Edvinas Karenga"
+date: "4/1/2020"
+output: 
+  html_document:
+    df_print: kable 
+---
+```{r, echo = FALSE, message = FALSE}
+#Libraries
+library(cluster) 
+```
+
+```{r, echo = FALSE, message = FALSE}
+#Custom function definition
+calcAndPlotIAC <- function(betaTable){
+  IAC <- cor(betaTable, use = "p")
+  hist(IAC, main = "IAC histograma", xlab = paste("Vidurkis =", format(mean(IAC[upper.tri(IAC)]), digits = 3)), ylab = "Dažnis")
+  return(IAC)
+}
+
+plotCluster <- function(betaTable, IAC){
+  cluster1 <- hclust(as.dist(1 - IAC), method = "average")
+  plot(cluster1, cex = 0.7, labels = dimnames(betaTable)[[2]], main = "Klasterizavimo dendrograma", sub = "", xlab = "1 - IAC", ylab = "Aukštis")
+}
+
+calcAndPlotMeanIACDis <- function(betaTable, IAC, sdout = -2){
+  meanIAC <- apply(IAC, 2, mean)
+  sdCorr <- sd(meanIAC)
+  numbersd <- (meanIAC - mean(meanIAC)) / sdCorr
+  plot(numbersd, main = expression(paste((IAC - bar(IAC)) / sigma, " pasiskirstymas")),
+       xlab = "Mėginio numeris", ylab = expression((IAC - bar(IAC)) / sigma))
+  abline(h = -2)
+  return(numbersd)
+}
+
+getOutliers <- function(betaTable, numbersD, sdout = -2){
+  outliers <- dimnames(betaTable)[[2]][numbersD < sdout]
+  return(outliers) 
+}
+
+removeOutliers <- function(table, numbersD, dimensions = "column", sdout = -2){
+  outliers <- numbersD > sdout
+  
+  if(dimensions == "column"){
+    return(table[, outliers])
+  }else if(dimensions == "row"){
+    return(table[outliers, ])
+  }
+  
+  return(table)
+}
+```
+
+```{r, echo = FALSE, message = FALSE}
+betaTable <- readRDS("../output/beta_table.Rds")
+pDataTable <- readRDS("../output/pData_table.Rds")
+```
+
+### Pradiniai duomenys
+
+Mėginių skaičius: `r ncol(betaTable)`
+
+Išmatuotų metilinimo įverčių skaičius: `r nrow(betaTable)`
+
+### Išskirčių šalinimas
+
+```{r, echo = FALSE, message = FALSE}
+IAC <- calcAndPlotIAC(betaTable)
+```
+
+IAC vidurkis duomenų rinkinyje su be pašalintų išskirčių yra 0.988. 
+Abiejuose galuose matomos nedidelės uodegos, kas gali reikšti, kad yra išimčių. 
+Taip pat matosi dvi viršūnės, kas galėtų reikšti, kad mėginiai pasiskirstę į dvi grupes. 
+
+```{r, echo = FALSE, message = FALSE}
+plotCluster(betaTable, IAC)
+```
+
+Atlikus hierarchinį klasterizavimą (UPGMA, naudojant 1 - IAC, kaip atstumo dydį), akivaizdžių mėginių, kurie galėtų būti išimtys nesimato.
+Čia taip pat pastebimas mėginių pasiskirtymas į dvi grupes.
+
+```{r, echo = FALSE, message = FALSE}
+numbersD <- calcAndPlotMeanIACDis(betaTable, IAC)
+outliers <- getOutliers(betaTable, numbersD)
+
+allOutliers <- outliers
+
+betaTable <- removeOutliers(betaTable, numbersD)
+pDataTable <- removeOutliers(pDataTable, numbersD, dimensions = "row")
+```
+
+Paskaičiavus IAC vidurkį kiekvienam mėginiui ir nubraižius jų pasiskirtymą matosi du mėginiai išskirtys:
+
+`r outliers` 
+
+Pašaliname tuos mėginius ir pakartojame procesą dar 4 kartus.
+
+```{r, echo = FALSE, message = FALSE, fig.show='hide'}
+for(i in c(1:4)){
+  IAC <- calcAndPlotIAC(betaTable)
+
+  numbersD <- calcAndPlotMeanIACDis(betaTable, IAC)
+  
+  allOutliers <- c(allOutliers, getOutliers(betaTable, numbersD))
+  
+  betaTable <- removeOutliers(betaTable, numbersD)
+  pDataTable <- removeOutliers(pDataTable, numbersD, dimensions = "row")
+}
+```
+
+### Po 4 iteracijų gauti rezultatai
+
+```{r, echo = FALSE, message = FALSE}
+IAC <- calcAndPlotIAC(betaTable)
+```
+
+Koreliacijos pasiskirtymo histrogramoje matome, kad nebeliko uodegos kairėje pusėje ir atsirado,
+ryškus atsiskyrimas tarp dviejų meginių grupių.
+
+```{r, echo = FALSE, message = FALSE}
+plotCluster(betaTable, IAC)
+```
+
+Pagal hierarchinį klasterizavimą mėginių išskirčių nesimato, bet taip pat matosi dvi grupės.
+
+```{r, echo = FALSE, message = FALSE}
+numbersD <- calcAndPlotMeanIACDis(betaTable, IAC)
+```
+
+Iš mėginių vidutinės koreliacijos su kitais mėginiais grafiko matome, kad didelių išskirčių nebeliko.
+
+### Galutiniai duomenys
+
+Pašalintų mėginių skaičius: `r length(allOutliers)`
+
+Pašalinti mėginiai: `r allOutliers`
+
+Likęs mėginių skaičius: `r ncol(betaTable)`
+
+
+#### Informacija apie likusius mėginius
+
+```{r, echo = FALSE, message = FALSE}
+as.data.frame(table(pDataTable[c('gender', 'training')]))
+
+saveRDS(betaTable, "../output/beta_table_clean.Rds")
+saveRDS(pDataTable, "../output/pData_table_clean.Rds")
+```

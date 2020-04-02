@@ -1,0 +1,44 @@
+---
+title: "Duomenų nuskaitymas"
+author: "Edvinas Karenga"
+date: "01/04/2020"
+output: 
+  html_document:
+    df_print: kable 
+---
+```{r, include=FALSE}
+# Libraries
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+if(!requireNamespace("minfi", quietly = TRUE))
+  BiocManager::install("minfi")
+
+library(minfi)
+```
+
+```{r, echo = FALSE}
+targets <- read.metharray.sheet(base = "../output", verbose = FALSE)
+targets$Basename <- targets$basename
+RGset <- read.metharray.exp(base = "../input/GSE60655_RAW", targets = targets)
+saveRDS(RGset, "../output/RGset.Rds")
+```
+
+## Duomenų aprašymas
+
+#### Mėginių skaičius: `r ncol(RGset)`
+
+#### Išmatuotų metilinimo įverčių skaičius: `r nrow(RGset)`
+
+### Informacija apie keletą turimų mėginių
+
+```{r, echo = FALSE}
+as(colData(RGset[,1:4])[c('gender', 'training')], "data.frame")
+```
+
+
+### Informacija apie keletą genominių pozicijų
+
+```{r, echo = FALSE} 
+as.data.frame(assay(RGset[1:6,1:4]))
+```
