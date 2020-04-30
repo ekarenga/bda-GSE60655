@@ -1,0 +1,119 @@
+---
+title: 'PCA'
+author: "Edvinas Karenga"
+date: "29/04/2020"
+output: 
+  html_document:
+    df_print: kable 
+---
+
+```{r, echo = FALSE, message = FALSE, include = FALSE}
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+if(!requireNamespace("WGCNA", quietly = TRUE))
+  BiocManager::install("WGCNA")
+
+library(ggplot2)
+library("WGCNA")
+```
+
+```{r, echo = FALSE, message = FALSE}
+betaTable <- readRDS("../output/beta_table_clean.Rds")
+pDataTable <- readRDS("../output/pData_table_clean.Rds")
+annotation <- readRDS("../output/annotation_table.Rds")
+```
+
+
+```{r, echo = FALSE, message = FALSE, fig.height = 3, fig.width = 6, fig.align = "center"}
+rowMeans <- rowMeans(betaTable)
+
+island <- density(rowMeans[annotation$Relation_to_Island == "Island"])
+sShore <- density(rowMeans[annotation$Relation_to_Island == "S_Shore"])
+nShore <- density(rowMeans[annotation$Relation_to_Island == "N_Shore"])
+openSea <- density(rowMeans[annotation$Relation_to_Island == "OpenSea"])
+nShelf <- density(rowMeans[annotation$Relation_to_Island == "N_Shelf"])
+sShelf <- density(rowMeans[annotation$Relation_to_Island == "S_Shelf"])
+
+par(mar = c(0, 0, 1, 3), xpd = TRUE)
+colors <- c("#000000", "#FF0000", "#FF8000", "#0000FF", "#00FF80", "#00FF00")
+plot(island, col = colors[1], main = "CpG Island methylation", yaxt = "n", xaxt = "n", bty = "n", xlim = c(-0.1, 1.1), ylab = NA, xlab = NA)
+lines(sShore, col = colors[2])
+lines(nShore, col = colors[3])
+lines(openSea, col = colors[4])
+lines(nShelf, col = colors[5])
+lines(sShelf, col = colors[6])
+legend("topright", legend = c("Island", "South Shore", "North Shore", "Open Sea", "North Shelf", "South Shelf"),
+       col = colors, lty = 1, box.lty = 0, inset = c(-0.1, 0))
+```
+
+Atvaizdavus metilinimo tankio funkcijas tarp skirtingų CpG salų elementų matosi kad CpG salos, yra metilintos mažiau, negu "jūros" ir "šelfai", taip kaip ir turėtų būti.
+
+```{r, echo = FALSE, message = FALSE, fig.height = 3, fig.width = 6, fig.align = "center"}
+clust <- hclust(as.dist(1 - cor(betaTable)), method = "complete", title)
+
+plotDendroAndColors(clust, colors = labels2colors(pDataTable[,c("training", "gender")]), main = "Dendogram with traits",
+                    dendroLabels = toupper(paste(pDataTable$subject, substr(pDataTable$gender, 1, 1), 
+                                                 substr(pDataTable$training, 1, 1), sep = "")), groupLabels = c("Training", "Gender"))
+```
+
+Sugrupvaus pavyzdžius naudojant hierarchinį klasterizavimą, matosi, kad duomenys išsiskirstė į dvi grupes, pagal lytį. Treniruotės grupių susidarymui įtakos neturėjo.
+
+Penktojo tiriamojo mėginys panašus į išskirtį, nes jo mėginiai daryti prieš ir po treniruotės panašesni į kitų tiriamųjų, nei į vienas kitą, o tai neatitinka tendencijos matomos dendogramoje, kur kiekvieno tiriamojo mėginiai yra labiau panašūs vieni į kitą, negu į kitų tiriamųjų mėginius.
+
+Tolesniam darbui pašalinsime abu penktojo tiriamojo mėginius.
+
+```{r, echo = FALSE, message = FALSE, fig.height = 8, fig.align = "center"}
+betaTable <- betaTable[, -which(pDataTable[,"subject"] == 5)]
+pDataTable <- pDataTable[-which(pDataTable[,"subject"] == 5),]
+
+rowVariances <- apply(betaTable, 1, var)
+orderedVarianceIndexes <- order(rowVariances, decreasing = TRUE)
+
+heatmap(betaTable[orderedVarianceIndexes[1:5000],], labRow = NA, main = "Most variable CpG site heatmap", ylab = "CpG sites", xlab = "Subjects", 
+        labCol = toupper(paste(pDataTable$subject, substr(pDataTable$gender, 1, 1), substr(pDataTable$training, 1, 1), sep = "")))
+```
+
+Atvaizdavus 5000 pačių variabiliausių pozicijų, matomos tokios pačios tendecijos. Maždaug pusėje iš atvaizduotų pozicijų matomas atsiskryrimas tarp lyčių, o tarp mėginių imtų prieš ir po treniruočių skirtumo nėra.
+
+```{r, echo = FALSE, message = FALSE, fig.height = 3, fig.width = 12, fig.align = "center"}
+pca <- prcomp(t(betaTable))
+
+screeplot(pca, length(pca$sdev), main = "Scree plot of PCA", xlab = "Principal component", ylim = c(0, 250))
+axis(1, at = seq(from = 0.7, to = (0.7 + (length(pca$sdev) - 1) * 1.2), by = 1.2), labels = 1:length(pca$sdev), cex.axis = 0.9)
+```
+
+Atlikus principinių komponenčių analizę, matosi kad beveik trečdalį variacijos paaiškina pirma komponentė. Likusios paaiškina gerokai mažiau.
+
+```{r, echo = FALSE, message = FALSE, fig.height = 6, fig.align = "center"}
+s <-summary(pca)
+variation90percent <- min(which(s$importance[3,] > 0.9))
+```
+
+`r variation90percent` komponenčių paaiškina 90 procentų variacijos duomenyse.
+
+```{r, echo = FALSE, message = FALSE, fig.height = 6, fig.width = 7, fig.align = "center"}
+colors <- rep("#FF0000", length(pDataTable[,"gender"]))
+colors[which(pDataTable[,"gender"] == "male")] <- "#00FF00"
+
+symbols <- rep(1, length(pDataTable[,"training"]))
+symbols[which(pDataTable[,"training"] == "before")] <- 4
+
+pairs(pca$x[,1:5], col = colors, pch = symbols, main = "", oma = c(2,2,5,20), cex = 1, yaxt = "n", xaxt = "n",
+      labels = paste("PC", 1:5, "\n", s$importance[2,1:5], sep = ""))
+legend("right", legend = c("Female", "Male", "Before training", "After training"), col = c("#FF0000", "#00FF00", "#000000", "#000000"), 
+       lty = c(1, 1, NA, NA), pch = c(NA, NA, 1, 4), box.lty = 0)
+title(main = "Principal component pair plot")
+```
+
+Atvaizdavus pirmų penkių principinių komponenčių poras, matosi kad pirma principinė komponentė atskiria mėginius į dvi grupes pagal lytį. Iš likusių komponenčių negalime pamatyti jokių akivaizdžių grupių. 
+
+```{r, echo = FALSE, message = FALSE, fig.height = 6, fig.width = 10, fig.align = "center"}
+rownames(pca$x) <- paste("Subject: ", pDataTable$subject, ", ", pDataTable$gender, ", ", pDataTable$training, " training", sep = "")
+heatmap(pca$x, Colv = NA, margins = c(4, 6), main = "Principal component heatmap", xlab = "", ylab = "")
+title(xlab = "Principal component", line = 4)
+title(ylab = "Subject", line = -44)
+```
+
+Atvaizdavus principinių komponenčių rezultatus "heatmap" formatu, matosi, kad pirma komponentė yra susijusi su lytimi. Likusiose principinėse komponentėse sunku įžiūrėti ar jos yra susiję su kokia nors informacija apie mėginius. Skirtumo tarp žmonių prieš ir po treniruočių imtų mėginių nesimato.
+

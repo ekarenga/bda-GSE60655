@@ -24,22 +24,22 @@ plotCluster <- function(betaTable, IAC){
   plot(cluster1, cex = 0.7, labels = dimnames(betaTable)[[2]], main = "Klasterizavimo dendrograma", sub = "", xlab = "1 - IAC", ylab = "Aukštis")
 }
 
-calcAndPlotMeanIACDis <- function(betaTable, IAC, sdout = -2){
+calcAndPlotMeanIACDis <- function(betaTable, IAC, sdout = -3){
   meanIAC <- apply(IAC, 2, mean)
   sdCorr <- sd(meanIAC)
   numbersd <- (meanIAC - mean(meanIAC)) / sdCorr
   plot(numbersd, main = expression(paste((IAC - bar(IAC)) / sigma, " pasiskirstymas")),
        xlab = "Mėginio numeris", ylab = expression((IAC - bar(IAC)) / sigma))
-  abline(h = -2)
+  abline(h = -3)
   return(numbersd)
 }
 
-getOutliers <- function(betaTable, numbersD, sdout = -2){
+getOutliers <- function(betaTable, numbersD, sdout = -3){
   outliers <- dimnames(betaTable)[[2]][numbersD < sdout]
   return(outliers) 
 }
 
-removeOutliers <- function(table, numbersD, dimensions = "column", sdout = -2){
+removeOutliers <- function(table, numbersD, dimensions = "column", sdout = -3){
   outliers <- numbersD > sdout
   
   if(dimensions == "column"){
@@ -143,6 +143,13 @@ Likęs mėginių skaičius: `r ncol(betaTable)`
 
 ```{r, echo = FALSE, message = FALSE}
 as.data.frame(table(pDataTable[c('gender', 'training')]))
+
+singleTestSubjects <- which(table(pDataTable["subject"]) == 1)
+
+betaTable <- betaTable[, -which(pDataTable$subject == names(singleTestSubjects))]
+pDataTable <- pDataTable[-which(pDataTable$subject == names(singleTestSubjects)),]
+
+dim(pDataTable)
 
 saveRDS(betaTable, "../output/beta_table_clean.Rds")
 saveRDS(pDataTable, "../output/pData_table_clean.Rds")
