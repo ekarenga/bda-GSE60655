@@ -1,0 +1,179 @@
+---
+title: 'Hipotezių tyrimas'
+author: "Edvinas Karenga"
+date: "5/18/2020"
+output:
+  html_document:
+    df_print: kable 
+---
+
+```{r, echo = FALSE, message = FALSE, fig.align = "center"}
+betaTable <- readRDS("../output/beta_table_clean.Rds")
+pDataTable <- readRDS("../output/pData_table_clean.Rds")
+annotation <- readRDS("../output/annotation_table.Rds")
+```
+
+```{r, echo = FALSE, message = FALSE, warning=FALSE, fig.align = "center"}
+tTest <- apply(betaTable, 1, function(x) {
+    result <- t.test(x ~ pDataTable$training)
+    c(result$p.value, result$estimate[1], result$estimate[2])
+  })
+
+tTest <- as.data.frame(t(tTest))
+colnames(tTest) <- c("pValue", "meanAfter", "meanBefore")
+```
+
+Mėginių grupių prieš treniruotes ir po treniruočių vidurkiams palyginti atliekame Studento t-testą.
+Atvaizdavus 5 metilinimo pozicijas turinčias didžiausius skirtumus, matome, kad mėginiai išsiskirsto į dvi grupes.
+
+```{r, echo = FALSE, message = FALSE, warning=FALSE, fig.align = "center"}
+orderedMeans <- order(tTest$pValue)
+
+colors <- ifelse(pDataTable$training == "after", "green", "red")
+
+par(mar = c(4, 4, 4, 8), xpd = TRUE)
+
+titles <- rownames(betaTable[orderedMeans[1:5],])
+
+for(i in 1:5){
+  plot(betaTable[orderedMeans[i],], col = colors, xlab = "", xaxt = "n", ylab = "Metilinimo vertės", 
+       main = titles[i])
+  legend("right", inset = c(-0.33, 0), legend = c("Prieš treniruotes", "Po treniruočių"), col = c("red", "green"), pch = c(1, 1), box.lty = 0)
+}
+```
+
+
+
+```{r, echo = FALSE, message = FALSE, warning=FALSE, fig.align = "center"}
+pValueTable <- matrix(c(
+  sum(tTest$pValue < 0.1),
+  sum(tTest$pValue < 0.05),
+  sum(tTest$pValue < 0.01),
+  sum(p.adjust(tTest$pValue, method = "fdr") < 0.05),
+  sum(p.adjust(tTest$pValue, method = "bonferroni") < 0.05)
+))
+
+colnames(pValueTable) <- c("Pozicijų skaičius")
+rownames(pValueTable) <- c("0.1", "0.05", "0.01", "0.05 FDR ", "0.05 Bonferroni")
+
+as.data.frame(pValueTable)
+```
+
+
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE, fig.align = "center"}
+hist(tTest$pValue, main = "p-reikšmių histograma", xlab = "p-reikšmė", ylab = "Dažnis")
+```
+
+Atvaizdavus p-reikšmes histograma, matome, kad reikšmės pasiskirtę tolygiai, bet pikas nėra labai iškilęs. 
+
+```{r, echo = FALSE, message = FALSE, warning=FALSE, fig.align = "center"}
+logFoldColors <- rep("#000000", length(tTest$pValue))
+logFoldColors[tTest$pValue < 0.05] <- "#0000FF"
+logFoldColors[abs(log2(tTest$meanAfter) - log2(tTest$meanBefore)) > 1] <- "#00FF00"
+logFoldColors[tTest$pValue < 0.05 & abs(log2(tTest$meanAfter) - log2(tTest$meanBefore)) > 1] <- "#FF0000"
+
+plot(log2(tTest$meanAfter) - log2(tTest$meanBefore), -log10(tTest$pValue), xlab = expression("log"[2]*" fold change"),
+     ylab = expression("-log"[10]*"(p-value)"), col = logFoldColors)
+```
+
+Atvaizdavus duomenis "volcano" grafiku, matosi, kad yra gan daug reikšmių, kurių pokytis yra statistiškai patikimas, tačiau pats metilinimo pokyčio dydis nėra labai didelis.
+
+
+```{r, echo = FALSE, message = FALSE,  warning=FALSE, fig.align = "center"}
+colorsMan <- rep("#000000", length(annotation$Relation_to_Island))
+colorsMan[annotation$Relation_to_Island == "S_Shore"] <- "#FF0000"
+colorsMan[annotation$Relation_to_Island == "N_Shore"] <- "#FF8000"
+colorsMan[annotation$Relation_to_Island == "OpenSea"] <- "#0000FF"
+colorsMan[annotation$Relation_to_Island == "N_Shelf"] <- "#00FF80"
+colorsMan[annotation$Relation_to_Island == "S_Shelf"] <- "#00FF00"
+
+plottingPositions <- annotation$chr == "chr1"
+
+colorsMan <- colorsMan[plottingPositions]
+
+par(mar = c(4, 4, 4, 8), xpd = TRUE)
+plot(annotation$pos[plottingPositions], -log10(tTest$pValue[plottingPositions]), 
+     ylab = expression('-log'[10]*'(p-value)'), main = "Pirma chromosoma", xlab = "Pozicija chromosomoje", 
+     col = colorsMan)
+legend("right", legend = c("Island", "South Shore", "North Shore", "Open Sea", "North Shelf", "South Shelf"),
+       col = c("#000000", "#FF0000", "#FF8000", "#0000FF", "#00FF80", "#00FF00"), box.lty = 0, inset = c(-0.33, 0), pch = rep(1, 6))
+```
+
+Atvaizdavus pirmos chromosomos metilinimo pokyčių reikšmes "manhattan" grafiku matosi, kad didžiausi metilinimo pokyčiai yra jūrose, tačiau matosi ir metilinimo pokyčių kitose pozicijose.
+
+```{r, echo = FALSE, message = FALSE, warning=FALSE, fig.align = "center"}
+pDataTable$sentrix <- sapply(strsplit(basename(pDataTable$filenames), "_"), "[", 2)
+
+lmTest <- apply(betaTable, 1, function(x) {
+    lm0 <- lm(x ~ pDataTable$sentrix)
+    lm1 <- lm(x ~ pDataTable$sentrix + pDataTable$training)
+    result <- anova(lm0, lm1)
+    c(result$Pr[2], coef(lm1)[4])
+  })
+
+lmTest <- as.data.frame(t(lmTest))
+colnames(lmTest) <- c("pValue", "meanDiff")
+```
+
+### Tiesinė regresija
+
+Naudojant tiesinę regresiją sudarysime du modelius. Nulinis modelis bus skirtas nustatyti metilinimo dydį pagal gardelės numerį. Į alternatyvų modelį bus įtraukta reikšmė ar mėginys buvo paimtas prieš ar po treniruočių.
+
+```{r, echo = FALSE, message = FALSE, warning=FALSE, fig.align = "center"}
+orderedMeans <- order(abs(lmTest$pValue))
+
+colors <- ifelse(pDataTable$training == "after", "green", "red")
+
+titles <- rownames(betaTable[orderedMeans[1:5],])
+
+par(mar=c(4, 4, 4, 8), xpd=TRUE)
+for(i in 1:5){
+  plot(betaTable[orderedMeans[i],], col = colors, xlab = "", xaxt = "n", ylab = "Metilinimo vertės", 
+       main = titles[i])
+  legend("right", inset = c(-0.33, 0), legend = c("Prieš treniruotes", "Po treniruočių"), col = c("red", "green"), pch = c(1, 1), box.lty = 0)
+}
+```
+
+Atvaizdavus 5 metilinimo pozicijas turinčias didžiausius skirtumus, matome, kad mėginiai pakankamai neblogai išsiskirsto į dvi grupes.
+
+```{r, echo = FALSE, message = FALSE, warning=FALSE, fig.align = "center"}
+pValueTable <- matrix(c(
+  sum(lmTest$pValue < 0.1),
+  sum(lmTest$pValue < 0.05),
+  sum(lmTest$pValue < 0.01),
+  sum(p.adjust(lmTest$pValue, method = "fdr") < 0.05),
+  sum(p.adjust(lmTest$pValue, method = "bonferroni") < 0.05)
+))
+
+colnames(pValueTable) <- c("Pozicijų skaičius")
+rownames(pValueTable) <- c("0.1", "0.05", "0.01", "0.05 FDR ", "0.05 Bonferroni")
+
+as.data.frame(pValueTable)
+```
+
+Palyginus su Studento t-testo hipotezių tyrimu, gauname šiek tiek daugiau patikimų pozicijų.
+
+```{r, echo = FALSE, message = FALSE, warning=FALSE, fig.align = "center"}
+hist(lmTest$pValue, main = "p-reikšmių histograma", xlab = "p-reikšmė", ylab = "Dažnis")
+```
+
+P-reikšmės pasiskirstę tolygiai, bet histogramos pikas iškilęs aukščiau, palyginus su t-testo rezultatais.
+
+```{r, echo = FALSE, message = FALSE, warning=FALSE, fig.align = "center"}
+plot(log2(lmTest$meanDiff), -log10(lmTest$pValue), xlab = expression("log"[2]*" fold change"),
+     ylab = expression("-log"[10]*"(p-value)"))
+```
+
+Nelabai volcano plot išėjo nupiešt be vidurkių skirtumo :/
+
+```{r, echo = FALSE, message = FALSE, warning=FALSE, fig.align = "center"}
+par(mar = c(4, 4, 4, 8), xpd = TRUE)
+plot(annotation$pos[plottingPositions], -log10(lmTest$pValue[plottingPositions]), 
+     ylab = expression('-log'[10]*'(p-value)'), main = "Pirma chromosoma", xlab = "Pozicija chromosomoje", 
+     col = colorsMan)
+legend("right", legend = c("Island", "South Shore", "North Shore", "Open Sea", "North Shelf", "South Shelf"),
+       col = c("#000000", "#FF0000", "#FF8000", "#0000FF", "#00FF80", "#00FF00"), box.lty = 0, inset = c(-0.33, 0), pch = 1)
+```
+
+Atvaizdavus pirmos chromosomos metilinimo pokyčių reikšmes "manhattan" grafiku matosi, kad didžiausi metilinimo pokyčiai yra jūrose, kitose pozicijose reikšmių su dideliu skirtumu nedaug.
