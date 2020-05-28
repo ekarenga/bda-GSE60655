@@ -1,0 +1,104 @@
+---
+title: "k-artimiausių kaymynų klasifikatorius"
+author: "Edvinas Karenga"
+date: "5/22/2020"
+output: 
+  html_document:
+    df_print: kable 
+---
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+euclideanDistance <- function(row1, row2){
+  dist(rbind(row1, row2))
+}
+
+getNeighbours <- function (trainingSet, test, numNeighbours = 3){
+  distances <- apply(trainingSet, 2, function(x) euclideanDistance(x, test))
+  ordered <- order(distances)
+  matrix(c(ordered[1:numNeighbours], distances[ordered[1:numNeighbours]]), nrow = numNeighbours, ncol = 2)
+}
+ 
+predict <- function(trainingSet, labels, test, numNeighbours = 3){
+  neighbours <- getNeighbours(trainingSet, test, numNeighbours)
+  predictionTable <- table(labels[neighbours[,1]])
+
+  as.character(as.data.frame(predictionTable)[order(predictionTable, decreasing = TRUE)[1],1])
+}
+```
+
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+crossValidation <- function(data, labels, classifier, foldCount = 10, ...){
+  set.seed(42)
+  shuffled <- sample(1:ncol(data))
+
+  folds <- cut(seq(1, length(shuffled)), breaks = foldCount, labels = FALSE)
+  
+  confusionMatrix <- matrix(0, nrow = length(unique(labels)), ncol = length(unique(labels)))
+  colnames(confusionMatrix) <- unique(labels)
+  rownames(confusionMatrix) <- unique(labels)
+  
+  
+  for(i in 1:foldCount){
+    testIndexes <- shuffled[folds == i]
+
+    for(i in testIndexes){
+      prediction <- classifier(data[, -testIndexes], labels[-testIndexes], betaTable[, i], ...)
+      confusionMatrix[prediction, labels[i]] <- confusionMatrix[prediction, labels[i]] + 1
+    }
+  }
+  
+  confusionMatrix
+}
+
+accuracy <- function(confusionMatrix){
+  totalPredictions <- sum(confusionMatrix)
+  correctPredictions <- sum(diag(confusionMatrix))
+  
+  correctPredictions / totalPredictions
+}
+```
+
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+betaTable <- readRDS("../output/beta_table_clean.Rds")
+pDataTable <- readRDS("../output/pData_table_clean.Rds")
+```
+
+K-artimiausių kaimynų klasifikatorių, panaudosime nustatyti ar mėginys imtas žmogui prieš sportą ar po sporto.
+Klasifikatoriaus tikslumui įvertinti naudosime 10-fold cross-validation.
+
+Pritaikius klasifikatorių vienam artimiausiam kaimynui (k = 1), rezultatai gauti labai prasti.
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+matrix <- crossValidation(betaTable, pDataTable$training, predict, 10, 1)
+a <- accuracy(matrix)
+as.data.frame(matrix)
+```
+Tikslumas: `r a`
+
+Didinant kaimynų skaičių, klasifikatoriaus tikslumas šiek tiek gerėjo.
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+accuracies <- matrix(NA, nrow = 5, ncol = 2)
+
+for(i in 1:5){
+  matrix <- crossValidation(betaTable, pDataTable$training, predict, 10, i * 2 - 1)
+  accuracies[i,] <- c(i * 2 - 1, accuracy(matrix))
+  
+  if(which.max(accuracies[,2]) == i){
+    bestMatrix <- matrix
+  }
+}
+
+highestAccuracy <- which.max(accuracies[,2])
+
+accuracies <- as.data.frame(accuracies)
+colnames(accuracies) <- c("k", "accuracy")
+accuracies
+```
+
+Didžiausias tikslumas `r accuracies[highestAccuracy, 2]` pasiektas su k = `r accuracies[highestAccuracy, 1]`.
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+as.data.frame(bestMatrix)
+```
